@@ -1007,7 +1007,7 @@ exports.getProfileById = async (req, res) => {
 // };
 
 exports.searchMatches = async (req, res) => {
-  //console.log(req.query);
+  console.log(req.query);
   // new add new ID based unique search code
   try {
     const { query } = req;
@@ -1023,6 +1023,10 @@ exports.searchMatches = async (req, res) => {
     // --- 2. Range Filters Parsing (Age) ---
     const age_from = Number(query.age_from);
     const age_to = Number(query.age_to);
+
+    // 🚩 NEW: Height Range Parsing (Front-end-லிருந்து cm மதிப்புகள் வரும்)
+    const height_from = query.height_from ? Number(query.height_from) : null;
+    const height_to = query.height_to ? Number(query.height_to) : null;
 
     // --- 3. Single Height Filter Parsing ---
     const selected_height = query.selected_height
@@ -1068,8 +1072,31 @@ exports.searchMatches = async (req, res) => {
 
       // 3. 📏 Single Height Exact Match Filter 🎯
 
-      if (selected_height) {
-        whereCondition.height = selected_height;
+      // if (selected_height) {
+      //   whereCondition.height = selected_height;
+      // }
+
+      // 🛑 NEW: Height Range Filter (DB String-ல் இருந்து CM Extract செய்தல்)
+      if (height_from && height_to) {
+        // height string-ல் இருந்து 'cm' மதிப்பை பிரித்தெடுக்க வேண்டியிருக்கும்.
+        // Sequelize Literal-ஐப் பயன்படுத்தி SQL function-களைப் பயன்படுத்துவோம்.
+
+        // height field format: "5ft 8in - 172cm"
+        // SPLIT_PART(height, ' - ', 2) -> '172cm'
+        // REPLACE(..., 'cm', '') -> '172'
+        // CAST(AS INTEGER) -> 172
+
+        const heightExtractionSql = `CAST(REPLACE(SUBSTRING_INDEX(height, ' - ', -1), 'cm', '') AS UNSIGNED)`;
+
+        whereCondition[Op.and] = [
+          ...(whereCondition[Op.and] || []),
+
+          // Min Height Check: Extracted CM >= height_from
+          Profile.sequelize.literal(`${heightExtractionSql} >= ${height_from}`),
+
+          // Max Height Check: Extracted CM <= height_to
+          Profile.sequelize.literal(`${heightExtractionSql} <= ${height_to}`),
+        ];
       }
 
       // 4. ⚜️ Caste and Religion Filters (Direct Match)
